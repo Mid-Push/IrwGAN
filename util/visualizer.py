@@ -79,10 +79,12 @@ class Visualizer():
             print('create web directory %s...' % self.web_dir)
             util.mkdirs([self.web_dir, self.img_dir])
         # create a logging file to store training losses
-        self.log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
-        with open(self.log_name, "a") as log_file:
-            now = time.strftime("%c")
-            log_file.write('================ Training Loss (%s) ================\n' % now)
+        self.log_name = os.path.join(opt.checkpoints_dir, opt.name, 'training_log.txt')
+        #with open(self.log_name, "a") as log_file:
+        #    now = time.strftime("%c")
+        #    log_file.write('================ Training Loss (%s) ================\n' % now)
+        self.logger = util.Logger(self.log_name)
+        self.betas = [[]]
 
     def reset(self):
         """Reset the self.saved status"""
@@ -95,7 +97,7 @@ class Visualizer():
         print('Command: %s' % cmd)
         Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
 
-    def display_current_results(self, visuals, epoch, save_result):
+    def display_current_results(self, visuals, epoch, save_result, betas=None):
         """Display current results on visdom; save current results to an HTML file.
 
         Parameters:
@@ -103,6 +105,12 @@ class Visualizer():
             epoch (int) - - the current epoch
             save_result (bool) - - if save the current results to an HTML file
         """
+        if betas is not None:
+            if len(self.betas) <= epoch:
+                self.betas.append(betas)
+            else:
+                self.betas[epoch] = betas
+
         if self.display_id > 0:  # show images in the browser using visdom
             ncols = self.ncols
             if ncols > 0:        # show all the images in one visdom panel
@@ -156,22 +164,30 @@ class Visualizer():
         if self.use_html and (save_result or not self.saved):  # save images to an HTML file if they haven't been saved.
             self.saved = True
             # save images to the disk
+            i = -1
             for label, image in visuals.items():
+                i += 1
                 image_numpy = util.tensor2im(image)
                 img_path = os.path.join(self.img_dir, 'epoch%.3d_%s.png' % (epoch, label))
                 util.save_image(image_numpy, img_path)
 
             # update website
-            webpage = html.HTML(self.web_dir, 'Experiment name = %s' % self.name, refresh=1)
+            webpage = html.HTML(self.web_dir, 'Experiment name = %s' % self.name, refresh=200)
             for n in range(epoch, 0, -1):
                 webpage.add_header('epoch [%d]' % n)
                 ims, txts, links = [], [], []
-
+                if betas is not None:
+                    betas_epoch = self.betas[n]
+                i = -1
                 for label, image_numpy in visuals.items():
+                    i += 1
                     image_numpy = util.tensor2im(image)
                     img_path = 'epoch%.3d_%s.png' % (n, label)
                     ims.append(img_path)
-                    txts.append(label)
+                    if betas is not None and betas_epoch[i] != '':
+                        txts.append(label+' '+betas_epoch[i])
+                    else:
+                        txts.append(label)
                     links.append(img_path)
                 webpage.add_images(ims, txts, links, width=self.win_size)
             webpage.save()
@@ -202,7 +218,7 @@ class Visualizer():
             self.create_visdom_connections()
 
     # losses: same format as |losses| of plot_current_losses
-    def print_current_losses(self, epoch, iters, losses, t_comp, t_data):
+    def print_current_losses(self, losses):
         """print current losses on console; also save the losses to the disk
 
         Parameters:
@@ -212,10 +228,11 @@ class Visualizer():
             t_comp (float) -- computational time per data point (normalized by batch_size)
             t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
+        #message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
+        message = ''
         for k, v in losses.items():
             message += '%s: %.3f ' % (k, v)
 
         print(message)  # print the message
-        with open(self.log_name, "a") as log_file:
-            log_file.write('%s\n' % message)  # save the message
+        #with open(self.log_name, "a") as log_file:
+        #    log_file.write('%s\n' % message)  # save the message

@@ -13,6 +13,8 @@ See our template dataset class 'template_dataset.py' for more details.
 import importlib
 import torch.utils.data
 from data.base_dataset import BaseDataset
+import copy
+import os
 
 
 def find_dataset_using_name(dataset_name):
@@ -44,7 +46,7 @@ def get_option_setter(dataset_name):
     return dataset_class.modify_commandline_options
 
 
-def create_dataset(opt):
+def create_dataset(opt, inf=True):
     """Create a dataset given the option.
 
     This function wraps the class CustomDatasetDataLoader.
@@ -56,8 +58,29 @@ def create_dataset(opt):
     """
     data_loader = CustomDatasetDataLoader(opt)
     dataset = data_loader.load_data()
+    if inf:
+        dataset = InfiniteDataLoader(dataset)
+    else:
+        dataset = dataset.dataloader
     return dataset
 
+class InfiniteDataLoader:
+    def __init__(self, dataset):
+        self.data_loader = dataset.dataloader
+        self.dataset_iterator = iter(self.data_loader)
+        self.dataset = dataset
+
+    def next(self):
+        try:
+            batch = next(self.dataset_iterator)
+        except StopIteration:
+            # Dataset exhausted, use a new fresh iterator.
+            self.dataset_iterator = iter(self.data_loader)
+            batch = next(self.dataset_iterator)
+        return batch
+
+    def __len__(self):
+        return len(self.dataset)
 
 class CustomDatasetDataLoader():
     """Wrapper class of Dataset class that performs multi-threaded data loading"""
@@ -71,12 +94,14 @@ class CustomDatasetDataLoader():
         self.opt = opt
         dataset_class = find_dataset_using_name(opt.dataset_mode)
         self.dataset = dataset_class(opt)
-        print("dataset [%s] was created" % type(self.dataset).__name__)
+        drop_last = opt.drop_last>0
+        #print("dataset [%s] was created" % type(self.dataset).__name__)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=opt.batch_size,
             shuffle=not opt.serial_batches,
-            num_workers=int(opt.num_threads))
+            num_workers=int(opt.num_threads),
+            drop_last=drop_last)
 
     def load_data(self):
         return self
@@ -91,3 +116,22 @@ class CustomDatasetDataLoader():
             if i * self.opt.batch_size >= self.opt.max_dataset_size:
                 break
             yield data
+
+def get_test_loaders(train_opt):
+    opt = copy.deepcopy(train_opt)
+    opt.num_threads = 0   # test code only supports num_threads = 1
+    opt.batch_size = 1    # test code only supports batch_size = 1
+    opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    opt.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    opt.drop_last = False
+    opt.phase = 'test'
+    opt.dataset_mode = 'single'
+    opt.load_size = opt.crop_size
+    opt_A = copy.deepcopy(opt)
+    opt_A.dataroot = os.path.join(opt_A.dataroot, 'testA')
+    opt_B = copy.deepcopy(opt)
+    opt_B.dataroot = os.path.join(opt_B.dataroot, 'testB')
+    dataloader_A = create_dataset(opt_A, inf=False)  # create a dataset given opt.dataset_mode and other options
+    dataloader_B = create_dataset(opt_B, inf=False)  # create a dataset given opt.dataset_mode and other options
+    return dataloader_A, dataloader_B

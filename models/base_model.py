@@ -83,9 +83,15 @@ class BaseModel(ABC):
         """
         if self.isTrain:
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
-        if not self.isTrain or opt.continue_train:
-            load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
-            self.load_networks(load_suffix)
+            # we do not have to save lr_scheduler as it will be reflected in opt.epoch_count
+        if not self.isTrain:
+            if opt.resume_epoch is None:
+                self.load_networks('latest')
+            else:
+                self.load_networks(opt.resume_epoch)
+        else:
+            if opt.resume_epoch is not None:
+                self.load_networks(opt.resume_epoch)
         self.print_networks(opt.verbose)
 
     def eval(self):
@@ -147,17 +153,23 @@ class BaseModel(ABC):
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
+
+        model_dict = {}
+        if isinstance(epoch, str):
+            save_filename = 'network-snapshot-%s.pth' % (epoch)
+        else:
+            save_filename = 'network-snapshot-%03d.pth' % (epoch)
+        save_path = os.path.join(self.save_dir, save_filename)
         for name in self.model_names:
             if isinstance(name, str):
-                save_filename = '%s_net_%s.pth' % (epoch, name)
-                save_path = os.path.join(self.save_dir, save_filename)
-                net = getattr(self, 'net' + name)
-
+                net = getattr(self, name)
                 if len(self.gpu_ids) > 0 and torch.cuda.is_available():
-                    torch.save(net.module.cpu().state_dict(), save_path)
+                    model_dict[name] = net.module.cpu().state_dict()
                     net.cuda(self.gpu_ids[0])
                 else:
-                    torch.save(net.cpu().state_dict(), save_path)
+                    model_dict[name] = net.cpu().state_dict()
+                    net.cuda(self.gpu_ids[0])
+        torch.save(model_dict, save_path)
 
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
         """Fix InstanceNorm checkpoints incompatibility (prior to 0.4)"""
@@ -179,24 +191,16 @@ class BaseModel(ABC):
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
+        load_filename = 'network-snapshot-%03d.pth' % (epoch)
+        load_path = os.path.join(self.save_dir, load_filename)
+        model = torch.load(load_path, map_location=str(self.device))
+        print('Resuming network from %s' % load_path)
         for name in self.model_names:
             if isinstance(name, str):
-                load_filename = '%s_net_%s.pth' % (epoch, name)
-                load_path = os.path.join(self.save_dir, load_filename)
-                net = getattr(self, 'net' + name)
+                net = getattr(self, name)
                 if isinstance(net, torch.nn.DataParallel):
                     net = net.module
-                print('loading the model from %s' % load_path)
-                # if you are using PyTorch newer than 0.4 (e.g., built from
-                # GitHub source), you can remove str() on self.device
-                state_dict = torch.load(load_path, map_location=str(self.device))
-                if hasattr(state_dict, '_metadata'):
-                    del state_dict._metadata
-
-                # patch InstanceNorm checkpoints prior to 0.4
-                for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
-                    self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
-                net.load_state_dict(state_dict)
+                net.load_state_dict(model[name])
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
@@ -207,7 +211,7 @@ class BaseModel(ABC):
         print('---------- Networks initialized -------------')
         for name in self.model_names:
             if isinstance(name, str):
-                net = getattr(self, 'net' + name)
+                net = getattr(self, name)
                 num_params = 0
                 for param in net.parameters():
                     num_params += param.numel()

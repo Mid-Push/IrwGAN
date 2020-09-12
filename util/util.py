@@ -4,6 +4,98 @@ import torch
 import numpy as np
 from PIL import Image
 import os
+from typing import Any, List, Tuple, Union
+import sys
+import random
+
+def set_seed(seed=None):
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        torch.backends.cudnn.deterministic = True
+        random.seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.benchmark = True
+
+class Logger(object):
+    """Redirect stderr to stdout, optionally print stdout to a file, and optionally force flushing on both stdout and the file."""
+
+    def __init__(self, file_name: str = None, file_mode: str = "a", should_flush: bool = True):
+        self.file = None
+
+        if file_name is not None:
+            if os.path.exists(file_name):
+                file_mode = 'a'
+            else:
+                file_mode = 'w'
+            self.file = open(file_name, file_mode)
+
+        self.should_flush = should_flush
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+
+        sys.stdout = self
+        sys.stderr = self
+
+    def __enter__(self) -> "Logger":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        self.close()
+
+    def write(self, text: str) -> None:
+        """Write text to stdout (and a file) and optionally flush."""
+        if len(text) == 0: # workaround for a bug in VSCode debugger: sys.stdout.write(''); sys.stdout.flush() => crash
+            return
+
+        if self.file is not None:
+            self.file.write(text)
+
+        self.stdout.write(text)
+
+        if self.should_flush:
+            self.flush()
+
+    def flush(self) -> None:
+        """Flush written text to both stdout and a file, if open."""
+        if self.file is not None:
+            self.file.flush()
+
+        self.stdout.flush()
+
+    def close(self) -> None:
+        """Flush, close possible files, and remove stdout/stderr mirroring."""
+        self.flush()
+
+        # if using multiple loggers, prevent closing in wrong order
+        if sys.stdout is self:
+            sys.stdout = self.stdout
+        if sys.stderr is self:
+            sys.stderr = self.stderr
+
+        if self.file is not None:
+            self.file.close()
+
+def write_loss(iterations, trainer, train_writer, prefix):
+    members = [attr for attr in dir(trainer) \
+               if not callable(getattr(trainer, attr)) and not attr.startswith("__") and (
+                       'loss' in attr or 'grad' in attr or 'nwd' in attr) and 'name' not in attr]
+    for m in members:
+        train_writer.add_scalar(prefix+'/'+m, getattr(trainer, m), iterations + 1)
+
+
+def format_time(seconds: Union[int, float]) -> str:
+    """Convert the seconds to human readable string with days, hours, minutes and seconds."""
+    s = int(np.rint(seconds))
+
+    if s < 60:
+        return "{0}s".format(s)
+    elif s < 60 * 60:
+        return "{0}m {1:02}s".format(s // 60, s % 60)
+    elif s < 24 * 60 * 60:
+        return "{0}h {1:02}m {2:02}s".format(s // (60 * 60), (s // 60) % 60, s % 60)
+    else:
+        return "{0}d {1:02}h {2:02}m".format(s // (24 * 60 * 60), (s // (60 * 60)) % 24, (s // 60) % 60)
 
 
 def tensor2im(input_image, imtype=np.uint8):
@@ -101,3 +193,60 @@ def mkdir(path):
     """
     if not os.path.exists(path):
         os.makedirs(path)
+
+def adjust_dynamic_range(data, drange_in, drange_out):
+    if drange_in != drange_out:
+        scale = (np.float32(drange_out[1]) - np.float32(drange_out[0])) / (np.float32(drange_in[1]) - np.float32(drange_in[0]))
+        bias = (np.float32(drange_out[0]) - np.float32(drange_in[0]) * scale)
+        data = data * scale + bias
+    return data
+
+def create_image_grid(images, grid_size=None):
+    assert images.ndim == 3 or images.ndim == 4
+    num, img_w, img_h = images.shape[0], images.shape[-1], images.shape[-2]
+
+    if grid_size is not None:
+        grid_w, grid_h = tuple(grid_size)
+    else:
+        grid_w = max(int(np.ceil(np.sqrt(num))), 1)
+        grid_h = max((num - 1) // grid_w + 1, 1)
+
+    grid = np.zeros(list(images.shape[1:-2]) + [grid_h * img_h, grid_w * img_w], dtype=images.dtype)
+    for idx in range(num):
+        x = (idx % grid_w) * img_w
+        y = (idx // grid_w) * img_h
+        grid[..., y : y + img_h, x : x + img_w] = images[idx]
+    return grid
+
+def convert_to_pil_image(image, drange=[-1,1]):
+    assert image.ndim == 2 or image.ndim == 3
+    if image.ndim == 3:
+        if image.shape[0] == 1:
+            image = image[0] # grayscale CHW => HW
+        elif image.shape[1]>image.shape[0]:
+            image = image.transpose(1, 2, 0) # CHW -> HWC
+
+    image = adjust_dynamic_range(image, drange, [0,255])
+    image = np.rint(image).clip(0, 255).astype(np.uint8)
+    fmt = 'RGB' if image.ndim == 3 else 'L'
+    return Image.fromarray(image, fmt)
+
+def save_images(image, filename, drange=[-1,1], quality=95):
+    img = convert_to_pil_image(image, drange)
+    if '.jpg' in filename:
+        img.save(filename,"JPEG", quality=quality, optimize=True)
+    else:
+        img.save(filename)
+def to_var( x):
+    """Converts numpy to variable."""
+    if torch.cuda.is_available():
+        x = x.cuda()
+    return torch.autograd.Variable(x)
+
+def to_data(x):
+    """Converts variable to numpy."""
+    if torch.cuda.is_available():
+        x = x.cpu()
+    return x.data.numpy()
+def save_image_grid(images, filename, drange=[-1,1], grid_size=None):
+    convert_to_pil_image(create_image_grid(images, grid_size), drange).save(filename)

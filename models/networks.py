@@ -9,6 +9,35 @@ from torch.optim import lr_scheduler
 # Helper Functions
 ###############################################################################
 
+class LayerNorm(nn.Module):
+    def __init__(self, num_features, eps=1e-5, affine=True):
+        super(LayerNorm, self).__init__()
+        self.num_features = num_features
+        self.affine = affine
+        self.eps = eps
+
+        if self.affine:
+            self.gamma = nn.Parameter(torch.Tensor(num_features).uniform_())
+            self.beta = nn.Parameter(torch.zeros(num_features))
+
+    def forward(self, x):
+        shape = [-1] + [1] * (x.dim() - 1)
+        # print(x.size())
+        if x.size(0) == 1:
+            # These two lines run much faster in pytorch 0.4 than the two lines listed below.
+            mean = x.view(-1).mean().view(*shape)
+            std = x.view(-1).std().view(*shape)
+        else:
+            mean = x.view(x.size(0), -1).mean(1).view(*shape)
+            std = x.view(x.size(0), -1).std(1).view(*shape)
+
+        x = (x - mean) / (std + self.eps)
+
+        if self.affine:
+            shape = [1, -1] + [1] * (x.dim() - 2)
+            x = x * self.gamma.view(*shape) + self.beta.view(*shape)
+        return x
+
 
 class Identity(nn.Module):
     def forward(self, x):
@@ -50,7 +79,7 @@ def get_scheduler(optimizer, opt):
     """
     if opt.lr_policy == 'linear':
         def lambda_rule(epoch):
-            lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.n_epochs) / float(opt.n_epochs_decay + 1)
+            lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.n_epochs) / float(opt.n_epochs_decay)
             return lr_l
         scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     elif opt.lr_policy == 'step':
@@ -94,7 +123,7 @@ def init_weights(net, init_type='normal', init_gain=0.02):
             init.normal_(m.weight.data, 1.0, init_gain)
             init.constant_(m.bias.data, 0.0)
 
-    print('initialize network with %s' % init_type)
+    #print('initialize network with %s' % init_type)
     net.apply(init_func)  # apply the initialization function <init_func>
 
 
@@ -198,9 +227,22 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
         net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
     elif netD == 'pixel':     # classify if each pixel is real or fake
         net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer)
+    elif netD in ['global', 'local', 'gl']:  # more options
+        net = Discriminator(input_nc, ndf, norm_layer=norm_layer, dis_type=netD)
+    elif netD in ['ms']:
+        net = MsImageDis(num_scales=3)
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain, gpu_ids)
+
+
+def define_BetaNet(input_nc=3, ndf=64, n_layers=3, norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[]):
+    net = None
+    norm_layer = get_norm_layer(norm_type=norm)
+    net = BetaNet(input_nc, ndf, n_layers, norm_layer)
+    return init_net(net, init_type, init_gain, gpu_ids)
+
+
 
 
 ##############################################################################
@@ -356,11 +398,11 @@ class ResnetGenerator(nn.Module):
 
         for i in range(n_downsampling):  # add upsampling layers
             mult = 2 ** (n_downsampling - i)
-            model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                         kernel_size=3, stride=2,
-                                         padding=1, output_padding=1,
+            model += [nn.Upsample(scale_factor=2), nn.Conv2d(ngf * mult, int(ngf * mult / 2),
+                                         kernel_size=3, stride=1,
+                                         padding=1,
                                          bias=use_bias),
-                      norm_layer(int(ngf * mult / 2)),
+                      LayerNorm(int(ngf * mult / 2)),
                       nn.ReLU(True)]
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
@@ -534,11 +576,16 @@ class UnetSkipConnectionBlock(nn.Module):
         else:   # add skip connections
             return torch.cat([x, self.model(x)], 1)
 
+def SNConv2d(sn, **kwargs):
+    if sn:
+        return nn.utils.spectral_norm(nn.Conv2d(**kwargs))
+    else:
+        return nn.Conv2d(**kwargs)
 
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
 
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, sn=False):
         """Construct a PatchGAN discriminator
 
         Parameters:
@@ -552,17 +599,16 @@ class NLayerDiscriminator(nn.Module):
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
-
         kw = 4
         padw = 1
-        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        sequence = [SNConv2d(sn, in_channels=input_nc, out_channels=ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):  # gradually increase the number of filters
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                SNConv2d(sn, in_channels=ndf * nf_mult_prev, out_channels=ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
                 norm_layer(ndf * nf_mult),
                 nn.LeakyReLU(0.2, True)
             ]
@@ -570,12 +616,12 @@ class NLayerDiscriminator(nn.Module):
         nf_mult_prev = nf_mult
         nf_mult = min(2 ** n_layers, 8)
         sequence += [
-            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            SNConv2d(sn, in_channels=ndf * nf_mult_prev, out_channels=ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)
         ]
 
-        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        sequence += [SNConv2d(sn, in_channels=ndf * nf_mult, out_channels=1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):
@@ -613,3 +659,162 @@ class PixelDiscriminator(nn.Module):
     def forward(self, input):
         """Standard forward."""
         return self.net(input)
+
+class Discriminator(nn.Module):
+    def __init__(self, input_nc=3, ndf=64, norm_layer=nn.InstanceNorm2d, dis_type='local'):
+        super(Discriminator, self).__init__()
+        self.nets = []
+        if dis_type == 'local':
+            self.nets = [NLayerDiscriminator(input_nc, ndf, 3, norm_layer)]
+        elif dis_type == 'global':
+            self.nets = [NLayerDiscriminator(input_nc, ndf, 5, norm_layer)]
+        elif dis_type == 'gl':
+            self.nets = [NLayerDiscriminator(input_nc, ndf,  3, norm_layer=nn.Identity,  sn=True),
+                         NLayerDiscriminator(input_nc, ndf,  5, norm_layer=nn.Identity,  sn=True)]
+        self.nets = nn.ModuleList(self.nets)
+
+    def forward(self, x):
+        outputs = []
+        for dis in self.nets:
+            out = dis(x)
+            outputs.append(out)
+        return outputs
+
+class BetaNet(nn.Module):
+    """Defines BetaNet"""
+
+    def __init__(self, input_nc=3, ndf=64, n_layers=3, norm_layer=nn.InstanceNorm2d):
+        """
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            n_layers (int)  -- the number of conv layers in the discriminator
+            norm_layer      -- normalization layer
+        """
+        super(BetaNet, self).__init__()
+        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kw = 4
+        padw = 1
+        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        nf_mult = 1
+        nf_mult_prev = 1
+        for n in range(1, n_layers):  # gradually increase the number of filters
+            nf_mult_prev = nf_mult
+            nf_mult = min(2 ** n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+        sequence += [nn.AdaptiveAvgPool2d(1)]
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, 1, stride=1, padding=0)]  # output 1 channel prediction map
+        self.model = nn.Sequential(*sequence)
+        self.downsample = nn.AdaptiveAvgPool2d(64)
+
+    def forward(self, inputs):
+        """
+        Images are fed in batch size instead of one image each time.
+        """
+        inputs = self.downsample(inputs)
+        outputs  = self.model(inputs)
+        outputs = torch.softmax(outputs, dim=0) * len(inputs)
+        return outputs
+
+#===============================blocks used in MUNIT===============================
+class Conv2dBlock(nn.Module):
+    def __init__(self, input_dim, output_dim, kernel_size, stride,
+                 padding=0, norm='none', activation='relu', pad_type='zero'):
+        super(Conv2dBlock, self).__init__()
+        self.use_bias = True
+        # initialize padding
+        if pad_type == 'reflect':
+            self.pad = nn.ReflectionPad2d(padding)
+        elif pad_type == 'replicate':
+            self.pad = nn.ReplicationPad2d(padding)
+        elif pad_type == 'zero':
+            self.pad = nn.ZeroPad2d(padding)
+        else:
+            assert 0, "Unsupported padding type: {}".format(pad_type)
+
+        # initialize normalization
+        norm_dim = output_dim
+        if norm == 'bn':
+            self.norm = nn.BatchNorm2d(norm_dim)
+        elif norm == 'in':
+            #self.norm = nn.InstanceNorm2d(norm_dim, track_running_stats=True)
+            self.norm = nn.InstanceNorm2d(norm_dim)
+        elif norm == 'ln':
+            self.norm = LayerNorm(norm_dim)
+        elif norm == 'adain':
+            self.norm = AdaptiveInstanceNorm2d(norm_dim)
+        elif norm == 'none' or norm == 'sn':
+            self.norm = None
+        else:
+            assert 0, "Unsupported normalization: {}".format(norm)
+
+        # initialize activation
+        if activation == 'relu':
+            self.activation = nn.ReLU(inplace=True)
+        elif activation == 'lrelu':
+            self.activation = nn.LeakyReLU(0.2, inplace=True)
+        elif activation == 'prelu':
+            self.activation = nn.PReLU()
+        elif activation == 'selu':
+            self.activation = nn.SELU(inplace=True)
+        elif activation == 'tanh':
+            self.activation = nn.Tanh()
+        elif activation == 'none':
+            self.activation = None
+        else:
+            assert 0, "Unsupported activation: {}".format(activation)
+
+        # initialize convolution
+        if norm == 'sn':
+            self.conv = SpectralNorm(nn.Conv2d(input_dim, output_dim, kernel_size, stride, bias=self.use_bias))
+        else:
+            self.conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride, bias=self.use_bias)
+
+    def forward(self, x):
+        x = self.conv(self.pad(x))
+        if self.norm:
+            x = self.norm(x)
+        if self.activation:
+            x = self.activation(x)
+        return x
+class MsImageDis(nn.Module):
+    # Multi-scale discriminator architecture
+    def __init__(self, input_dim=3, n_layer=4, dim=64, norm='none', act='lrelu', num_scales=3, pad_type='reflect'):
+        super(MsImageDis, self).__init__()
+        self.n_layer = n_layer
+        self.dim = dim
+        self.norm = norm
+        self.activ = act
+        self.num_scales = num_scales
+        self.pad_type = pad_type
+        self.input_dim = input_dim
+        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.cnns = nn.ModuleList()
+        for _ in range(self.num_scales):
+            self.cnns.append(self._make_net())
+
+    def _make_net(self):
+        dim = self.dim
+        cnn_x = []
+        cnn_x += [Conv2dBlock(self.input_dim, dim, 4, 2, 1, norm='none', activation=self.activ, pad_type=self.pad_type)]
+        for i in range(self.n_layer - 1):
+            cnn_x += [Conv2dBlock(dim, dim * 2, 4, 2, 1, norm=self.norm, activation=self.activ, pad_type=self.pad_type)]
+            dim *= 2
+        cnn_x += [nn.Conv2d(dim, 1, 1, 1, 0)]
+        cnn_x = nn.Sequential(*cnn_x)
+        return cnn_x
+
+    def forward(self, x):
+        outputs = []
+        for model in self.cnns:
+            outputs.append(model(x))
+            x = self.downsample(x)
+        return outputs
