@@ -63,8 +63,10 @@ class IRWGANModel(BaseModel):
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
             self.model_names = ['gen_a2b', 'gen_b2a', 'dis_a', 'dis_b', 'beta_net_a', 'beta_net_b']
+            self.opt_names = ['optimizer_G', 'optimizer_D']
         else:  # during test time, only load Gs
             self.model_names = ['gen_a2b', 'gen_b2a']
+            self.opt_names = []
 
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.
@@ -79,8 +81,8 @@ class IRWGANModel(BaseModel):
                                             opt.n_layers_D, opt.norm, 'normal', 0.02, self.gpu_ids)
             self.dis_b = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, 'normal', 0.02, self.gpu_ids)
-            self.beta_net_a = networks.define_BetaNet(opt.input_nc, opt.ndf, 3, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            self.beta_net_b = networks.define_BetaNet(opt.input_nc, opt.ndf, 3, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.beta_net_a = networks.define_BetaNet(opt.input_nc, opt.ndf, 3, opt.beta_sn, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.beta_net_b = networks.define_BetaNet(opt.input_nc, opt.ndf, 3, opt.beta_sn, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
         if self.isTrain:
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
@@ -99,6 +101,8 @@ class IRWGANModel(BaseModel):
             self.optimizers.append(self.optimizer_D)
 
             print('#### Information ####')
+            print('# expr_task: %s' % opt.expr_task)
+            print('# expr_dir: %s' % opt.expr_dir)
             print('# lambda_irw_A: %f' % opt.lambda_irw_A)
             print('# lambda_irw_B: %f' % opt.lambda_irw_B)
             print('# lambda_identity: %f'%opt.lambda_identity)
@@ -107,6 +111,7 @@ class IRWGANModel(BaseModel):
             print('# init_type: %s' % opt.init_type)
             print('# netD: %s' % opt.netD)
             print('# beta_mode: %s' % opt.beta_mode)
+            print('# beta_sn: %s' % opt.beta_sn)
             print()
 
     def set_input(self, input):

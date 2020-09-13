@@ -11,6 +11,7 @@ class TrainOptions(BaseOptions):
         parser = BaseOptions.initialize(self, parser)
         # visdom and HTML visualization parameters
         parser.add_argument('--display_freq', type=int, default=400, help='frequency of showing training results on screen')
+        parser.add_argument('--display_size', type=int, default=4, help='frequency of showing training results on screen')
         parser.add_argument('--display_ncols', type=int, default=4, help='if positive, display all images in a single visdom web panel with certain number of images per row.')
         parser.add_argument('--display_id', type=int, default=-1, help='window id of the web display')
         parser.add_argument('--display_server', type=str, default="http://localhost", help='visdom server of the web display')
@@ -23,7 +24,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--save_latest_freq', type=int, default=5000, help='frequency of saving the latest results')
         parser.add_argument('--save_epoch_freq', type=int, default=5, help='frequency of saving checkpoints at the end of epochs')
         parser.add_argument('--save_by_iter', action='store_true', help='whether saves model by iteration')
-        parser.add_argument('--resume_epoch', type=int,default=None,     help='continue training: load the latest model')
+        parser.add_argument('--resume_epoch', type=int, default=None,     help='continue training: load the latest model')
         parser.add_argument('--epoch_count', type=int, default=0, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
         parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         # training parameters
@@ -38,8 +39,9 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
         parser.add_argument('--drop_last', type=int, default=1, help='whether drop last batch to ensure the consistency between batchsize and samples')
-        parser.add_argument('--beta_mode', type=str, default='irw', help='the type of beta_mode [irw|baseline]')
+        parser.add_argument('--beta_mode', type=str, default='method', help='the type of beta_mode [method|baseline]')
+        parser.add_argument('--beta_sn', type=str, default='sn', help='whether applying spectral norm on beta_net')
 
         self.isTrain = True
-        self.important_args = ['lambda_irw_A', 'lambda_irw_B', 'beta_mode', 'batch_size', 'init_type', 'netD']
+        self.important_args = ['lambda_irw_A', 'lambda_irw_B', 'beta_mode', 'batch_size', 'init_type', 'netD', 'beta_sn']
         return parser

@@ -236,10 +236,11 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
-def define_BetaNet(input_nc=3, ndf=64, n_layers=3, norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[]):
+def define_BetaNet(input_nc=3, ndf=64, n_layers=3, sn='sn', norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[]):
     net = None
+    use_sn = (sn == 'sn')
     norm_layer = get_norm_layer(norm_type=norm)
-    net = BetaNet(input_nc, ndf, n_layers, norm_layer)
+    net = BetaNet(input_nc, ndf, n_layers, norm_layer, use_sn)
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
@@ -683,7 +684,7 @@ class Discriminator(nn.Module):
 class BetaNet(nn.Module):
     """Defines BetaNet"""
 
-    def __init__(self, input_nc=3, ndf=64, n_layers=3, norm_layer=nn.InstanceNorm2d):
+    def __init__(self, input_nc=3, ndf=64, n_layers=3, norm_layer=nn.InstanceNorm2d, sn=True):
         """
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -699,19 +700,19 @@ class BetaNet(nn.Module):
 
         kw = 4
         padw = 1
-        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        sequence = [SNConv2d(sn, in_channels=input_nc, out_channels=ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):  # gradually increase the number of filters
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                SNConv2d(sn, in_channels=ndf * nf_mult_prev, out_channels=ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
                 norm_layer(ndf * nf_mult),
                 nn.LeakyReLU(0.2, True)
             ]
         sequence += [nn.AdaptiveAvgPool2d(1)]
-        sequence += [nn.Conv2d(ndf * nf_mult, 1, 1, stride=1, padding=0)]  # output 1 channel prediction map
+        sequence += [SNConv2d(sn, in_channels=ndf * nf_mult, out_channels=1, kernel_size=1, stride=1, padding=0)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
         self.downsample = nn.AdaptiveAvgPool2d(64)
 

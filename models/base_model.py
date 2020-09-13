@@ -39,6 +39,7 @@ class BaseModel(ABC):
         self.loss_names = []
         self.model_names = []
         self.visual_names = []
+        self.opt_names = []
         self.optimizers = []
         self.image_paths = []
         self.metric = 0  # used for learning rate policy 'plateau'
@@ -81,9 +82,6 @@ class BaseModel(ABC):
         Parameters:
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
-        if self.isTrain:
-            self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
-            # we do not have to save lr_scheduler as it will be reflected in opt.epoch_count
         if not self.isTrain:
             if opt.resume_epoch is None:
                 self.load_networks('latest')
@@ -92,6 +90,10 @@ class BaseModel(ABC):
         else:
             if opt.resume_epoch is not None:
                 self.load_networks(opt.resume_epoch)
+        # put opt later as we load_networks will load optimizer as well
+        if self.isTrain:
+            self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
+            # we do not have to save lr_scheduler as it will be reflected in opt.epoch_count
         self.print_networks(opt.verbose)
 
     def eval(self):
@@ -169,6 +171,13 @@ class BaseModel(ABC):
                 else:
                     model_dict[name] = net.cpu().state_dict()
                     net.cuda(self.gpu_ids[0])
+
+        # save optimizers
+        for name in self.opt_names:
+            if isinstance(name, str):
+                opt = getattr(self, name)
+                model_dict[name] = opt.state_dict()
+
         torch.save(model_dict, save_path)
 
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
@@ -194,13 +203,20 @@ class BaseModel(ABC):
         load_filename = 'network-snapshot-%03d.pth' % (epoch)
         load_path = os.path.join(self.save_dir, load_filename)
         model = torch.load(load_path, map_location=str(self.device))
-        print('Resuming network from %s' % load_path)
+        print('Resuming from %s' % load_path)
+        print('Loading models...')
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, name)
                 if isinstance(net, torch.nn.DataParallel):
                     net = net.module
                 net.load_state_dict(model[name])
+        # load optimizers
+        print('Loading optimizers...')
+        for name in self.opt_names:
+            if isinstance(name, str):
+                opt = getattr(self, name)
+                opt.load_state_dict(model[name])
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
@@ -208,7 +224,10 @@ class BaseModel(ABC):
         Parameters:
             verbose (bool) -- if verbose: print the network architecture
         """
-        print('---------- Networks initialized -------------')
+        if self.opt.resume_epoch is not None:
+            print('-------------- Networks loaded ----------------')
+        else:
+            print('---------- Networks initialized -------------')
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, name)
@@ -219,6 +238,7 @@ class BaseModel(ABC):
                     print(net)
                 print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
         print('-----------------------------------------------')
+
 
     def set_requires_grad(self, nets, requires_grad=False):
         """Set requies_grad=Fasle for all the networks to avoid unnecessary computations

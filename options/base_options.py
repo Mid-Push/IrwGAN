@@ -104,6 +104,7 @@ class BaseOptions():
             if str(k) in self.important_args:
                 name += '-%s' % (str(v))
         name = title + name
+        opt.expr_task = title
         opt.name = name
         # save to the disk
         expr_dir = os.path.join(opt.checkpoints_dir, opt.name)

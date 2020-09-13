@@ -26,19 +26,19 @@ from util.visualizer import Visualizer
 from util.util import format_time
 from util import util
 import tensorboardX as tensorboard
-#from torch.utils.tensorboard import SummaryWriter
 from models import misc
 import os
 import numpy as np
-
+import torch
 
 if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset_size = len(dataset)    # get the number of images in the dataset.
     test_loader_a, test_loader_b = get_test_loaders(opt) # get test loader by hard-coding options
-    fix_a = iter(test_loader_a).next()['A']
-    fix_b = iter(test_loader_b).next()['A']
+    fix_a = torch.stack([test_loader_a.dataset[i]['A'] for i in range(opt.display_size)]).cuda()
+    fix_b = torch.stack([test_loader_b.dataset[i]['A'] for i in range(opt.display_size)]).cuda()
+
 
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     train_writer = tensorboard.SummaryWriter(opt.expr_dir) # setup train writer
@@ -78,7 +78,7 @@ if __name__ == '__main__':
                 # evaluation
                 test_images = model.test(fix_a, fix_b)
                 test_path = os.path.join(opt.expr_dir, 'test_image-%03d.png' % epoch)
-                misc.save_image_grid(test_images, test_path)
+                misc.save_image_grid(test_images, test_path, opt.display_size)
 
         model.update_learning_rate()    # update learning rates in the beginning of every epoch.
         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs

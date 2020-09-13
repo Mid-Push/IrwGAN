@@ -5,12 +5,31 @@ from metrics.fid import compute_fid
 import numpy as np
 import torch.nn.functional as F
 
-def save_image_grid(tensor_images, path, image_size=128):
+def save_image_grid(tensor_image_list, path, display_size, image_size=128):
+
+
     images = []
-    for image in tensor_images:
-        images.append(util.to_data(F.interpolate(image, scale_factor=image_size/image.size(-1), recompute_scale_factor=True ) ))
+    # row
+
+    for i in range(display_size):
+        for j in range(len(tensor_image_list)):
+            image = tensor_image_list[j][i].unsqueeze(0)
+            #if j == len(tensor_image_list)//2:
+            # insert blank between a2b and b2a
+            #    images.append(util.to_data(torch.ones([1,3,image_size,image_size])))
+            images.append(util.to_data(F.interpolate(image, scale_factor=image_size/image.size(-1), recompute_scale_factor=True ) ))
+    grid_size = [len(images)//display_size, display_size]
+    """
+    num_images = 0
+    for i in range(len(tensor_image_list)):
+        for j in range(display_size):
+            image = tensor_image_list[i][j].unsqueeze(0)
+            images.append(util.to_data(F.interpolate(image, scale_factor=image_size/image.size(-1), recompute_scale_factor=True ) ))
+            num_images += 1
+    assert len(images) == num_images
+    grid_size = [display_size, num_images//display_size]
+    """
     images = np.concatenate(images, 0)
-    grid_size = [len(images), 1]
     util.save_image_grid(images, path, grid_size=grid_size)
 
 

@@ -68,7 +68,8 @@ class InfiniteDataLoader:
     def __init__(self, dataset):
         self.data_loader = dataset.dataloader
         self.dataset_iterator = iter(self.data_loader)
-        self.dataset = dataset
+        self.wrap_dataset = dataset
+        self.dataset = self.data_loader.dataset
 
     def next(self):
         try:
@@ -80,7 +81,7 @@ class InfiniteDataLoader:
         return batch
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.wrap_dataset)
 
 class CustomDatasetDataLoader():
     """Wrapper class of Dataset class that performs multi-threaded data loading"""
