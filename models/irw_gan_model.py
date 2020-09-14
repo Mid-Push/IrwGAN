@@ -211,13 +211,12 @@ class IRWGANModel(BaseModel):
             self.beta_a_pool.append(self.beta_a.detach())
             self.beta_b_pool.append(self.beta_b.detach())
             loss_G = self.compute_loss_G(self.beta_a, self.beta_b)/batch_size             # calculate gradients for G_A and G_B
+            if i == batch_size-1:
+                self.irw_loss_A = torch.norm(beta_as)
+                self.irw_loss_B = torch.norm(beta_bs)
+                irw_loss = self.opt.lambda_irw_A * self.irw_loss_A + self.opt.lambda_irw_B * self.irw_loss_B
+                loss_G = loss_G + irw_loss
             loss_G.backward()
-        beta_as = self.beta_net_a(self.real_As)
-        beta_bs = self.beta_net_b(self.real_Bs)
-        self.irw_loss_A = torch.norm(beta_as)
-        self.irw_loss_B = torch.norm(beta_bs)
-        irw_loss = self.opt.lambda_irw_A * self.irw_loss_A + self.opt.lambda_irw_B * self.irw_loss_B
-        irw_loss.backward()
         self.optimizer_G.step()       # update G_A and G_B's weights
 
 
