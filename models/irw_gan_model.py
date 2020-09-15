@@ -54,7 +54,7 @@ class IRWGANModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'irw_A', 'irw_B']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'cycle_A', 'idt_A']
         visual_names_B = ['real_B', 'fake_A', 'cycle_B', 'idt_B']
@@ -212,10 +212,10 @@ class IRWGANModel(BaseModel):
             self.beta_b_pool.append(self.beta_b.detach())
             loss_G = self.compute_loss_G(self.beta_a, self.beta_b)/batch_size             # calculate gradients for G_A and G_B
             if i == batch_size-1:
-                self.irw_loss_A = torch.norm(beta_as)
-                self.irw_loss_B = torch.norm(beta_bs)
-                irw_loss = self.opt.lambda_irw_A * self.irw_loss_A + self.opt.lambda_irw_B * self.irw_loss_B
-                loss_G = loss_G + irw_loss
+                self.loss_irw_A = torch.norm(beta_as)
+                self.loss_irw_B = torch.norm(beta_bs)
+                loss_irw = self.opt.lambda_irw_A * self.loss_irw_A + self.opt.lambda_irw_B * self.loss_irw_B
+                loss_G = loss_G + loss_irw
             loss_G.backward()
         self.optimizer_G.step()       # update G_A and G_B's weights
 
@@ -230,13 +230,8 @@ class IRWGANModel(BaseModel):
             loss_D.backward()
         self.optimizer_D.step()  # update D_A and D_B's weights
 
-        return to_data(beta_as.squeeze().detach()), to_data(beta_bs.squeeze().detach())
+        # save input images and betas
+        images = torch.cat([self.real_As.detach(), self.real_Bs.detach()], 0)
+        betas = self.beta_a_pool + self.beta_b_pool
+        return images, betas
 
-    def get_current_betas(self):
-        half  = len(self.visual_names)//2
-        betas = ['beta_%4.3f' % self.beta_a.item()]
-        betas += [''] * (half-1)
-        betas += ['beta_%4.3f' % self.beta_b.item()]
-        betas += [''] * (half-1)
-        assert len(betas) == len(self.visual_names)
-        return betas

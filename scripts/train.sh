@@ -21,5 +21,13 @@ do
     python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=0.5 --lambda_irw_B=1.0
   elif [ $config = 5 ]; then
     python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=1.0 --lambda_irw_B=1.0
+  elif [ $config = 6 ]; then
+    python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=0.3 --lambda_irw_B=1.0 --init_type=kaiming
+  elif [ $config = 7 ]; then
+    python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=0.0 --lambda_irw_B=1.0 --init_type=kaiming
+  elif [ $config = 8 ]; then
+    python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=0.3 --lambda_irw_B=1.0 --init_type=kaiming --netD=ms
+  elif [ $config = 9 ]; then
+    python train.py --beta_mode=method --dataroot=datasets/$dataset --lambda_irw_A=0.0 --lambda_irw_B=1.0 --init_type=kaiming --netD=ms
   fi
 done

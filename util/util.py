@@ -234,7 +234,7 @@ def convert_to_pil_image(image, drange=[-1,1]):
 def save_images(image, filename, drange=[-1,1], quality=95):
     img = convert_to_pil_image(image, drange)
     if '.jpg' in filename:
-        img.save(filename,"JPEG", quality=quality, optimize=True)
+        img.save(filename, "JPEG", quality=quality, optimize=True)
     else:
         img.save(filename)
 def to_var( x):

@@ -6,7 +6,6 @@ import time
 from . import util, html
 from subprocess import Popen, PIPE
 
-
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
 else:
@@ -76,7 +75,7 @@ class Visualizer():
         if self.use_html:  # create an HTML object at <checkpoints_dir>/web/; images will be saved under <checkpoints_dir>/web/images/
             self.web_dir = os.path.join(opt.checkpoints_dir, opt.name, 'web')
             self.img_dir = os.path.join(self.web_dir, 'images')
-            print('create web directory %s...' % self.web_dir)
+            #print('create web directory %s...' % self.web_dir)
             util.mkdirs([self.web_dir, self.img_dir])
         # create a logging file to store training losses
         self.log_name = os.path.join(opt.checkpoints_dir, opt.name, 'training_log.txt')
@@ -218,7 +217,7 @@ class Visualizer():
             self.create_visdom_connections()
 
     # losses: same format as |losses| of plot_current_losses
-    def print_current_losses(self, losses):
+    def print_current_losses(self, cur_iters, total_iters, t_comp, losses):
         """print current losses on console; also save the losses to the disk
 
         Parameters:
@@ -228,11 +227,9 @@ class Visualizer():
             t_comp (float) -- computational time per data point (normalized by batch_size)
             t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        #message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
-        message = ''
+        message = '(cur_iters: [%d/%07d], time: %-s) ' % (cur_iters, total_iters, util.format_time(t_comp))
         for k, v in losses.items():
-            message += '%s: %.3f ' % (k, v)
-
+            message += '%s: %.2f ' % (k, v)
         print(message)  # print the message
         #with open(self.log_name, "a") as log_file:
         #    log_file.write('%s\n' % message)  # save the message

@@ -4,13 +4,36 @@ import torch
 from metrics.fid import compute_fid
 import numpy as np
 import torch.nn.functional as F
+from PIL import Image, ImageDraw, ImageFont
+
+def save_train_image_grid(tensor_images, betas, path, display_size=10, image_size=128):
+    assert len(betas) == len(tensor_images)
+    images = []
+    # row-wise
+    for image in (tensor_images):
+        image = image.unsqueeze(0)
+        images.append(util.to_data(
+                F.interpolate(image, scale_factor=image_size / image.size(-1), recompute_scale_factor=True)))
+    grid_size = [display_size, len(images)//display_size]
+    images = np.concatenate(images, 0)
+    img = util.convert_to_pil_image(util.create_image_grid(images, grid_size))
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.load_default()
+    for i in range(grid_size[0]):
+        for j in range(grid_size[1]):
+            (x, y) = (image_size*i, image_size*j)
+            id = i * grid_size[1] + j
+            name = '%4.3f' % betas[id]
+            color = 'rgb(255, 255, 255)'  # white color
+            draw.text((x, y), name, fill=color, font=font)
+
+    # save the edited image
+    img.save(path)
+
 
 def save_image_grid(tensor_image_list, path, display_size, image_size=128):
-
-
     images = []
-    # row
-
+    # row-wise
     for i in range(display_size):
         for j in range(len(tensor_image_list)):
             image = tensor_image_list[j][i].unsqueeze(0)
@@ -31,6 +54,8 @@ def save_image_grid(tensor_image_list, path, display_size, image_size=128):
     """
     images = np.concatenate(images, 0)
     util.save_image_grid(images, path, grid_size=grid_size)
+
+
 
 
 def make_dirs(dirs):

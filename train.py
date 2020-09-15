@@ -57,28 +57,23 @@ if __name__ == '__main__':
             cur_iters += opt.batch_size
 
             model.set_input(data)         # unpack data from dataset and apply preprocessing
-            beta_as_list, beta_bs_list = model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+            input_images, betas = model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if cur_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
                 t_comp = (time.time() - start_time)
-                info  = 'cur_iters: [%d/%d]' % (cur_iters, total_iters)
-                info += ' total_time: %-12s' % format_time(t_comp)
-                info += ' irw_loss_a: %4.2f' % model.irw_loss_A.item()
-                info += ' irw_loss_b: %4.2f' % model.irw_loss_B.item()
-                print(info)
+                util.write_loss(cur_iters, model, train_writer, prefix='training')
+                visualizer.print_current_losses(cur_iters, total_iters, t_comp, model.get_current_losses())
 
             if cur_iters % opt.display_freq == 0:  # display images on visdom and save images to a HTML file
 
                 model.compute_visuals()
-                visualizer.display_current_results(model.get_current_visuals(), epoch, True, model.get_current_betas())
-                util.write_loss(cur_iters, model, train_writer, prefix='training')
-                visualizer.print_current_losses(model.get_current_losses())
-                print('beta_as: %s' % np.array2string(beta_as_list, precision=2, suppress_small=True))
-                print('beta_bs: %s' % np.array2string(beta_bs_list, precision=2, suppress_small=True))
+                visualizer.display_current_results(model.get_current_visuals(), epoch, save_result=True)
                 # evaluation
                 test_images = model.test(fix_a, fix_b)
                 test_path = os.path.join(opt.expr_dir, 'test_image-%03d.png' % epoch)
                 misc.save_image_grid(test_images, test_path, opt.display_size)
+                train_path = os.path.join(opt.expr_dir, 'train_image-%03d.png' % epoch)
+                misc.save_train_image_grid(input_images, betas, train_path)
 
         model.update_learning_rate()    # update learning rates in the beginning of every epoch.
         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
@@ -90,3 +85,5 @@ if __name__ == '__main__':
             train_writer.add_scalar('evaluation/fid_a2b', fid_a2b, cur_iters)
             train_writer.add_scalar('evaluation/fid_b2a', fid_b2a, cur_iters)
             print('FID_a2b: %4.2f, FID_b2a: %4.2f' % (fid_a2b, fid_b2a))
+
+    print('Training finished...')
