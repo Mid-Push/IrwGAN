@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 def save_train_image_grid(tensor_images, betas, path, display_size=10, image_size=128):
     assert len(betas) == len(tensor_images)
+    if display_size > len(tensor_images):
+        display_size = len(tensor_images)
     images = []
     # row-wise
     for image in (tensor_images):
@@ -18,22 +20,24 @@ def save_train_image_grid(tensor_images, betas, path, display_size=10, image_siz
     images = np.concatenate(images, 0)
     img = util.convert_to_pil_image(util.create_image_grid(images, grid_size))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-    for i in range(grid_size[0]):
-        for j in range(grid_size[1]):
-            (x, y) = (image_size*i, image_size*j)
-            id = i * grid_size[1] + j
-            name = '%4.3f' % betas[id]
-            color = 'rgb(255, 255, 255)'  # white color
-            draw.text((x, y), name, fill=color, font=font)
-
+    try:
+        font = ImageFont.truetype('/usr/share/fonts/gnu-free/FreeSerif.ttf', 25)
+    except:
+        font = ImageFont.load_default()
+    grid_w, grid_h = grid_size
+    for idx in range(len(images)):
+        x = (idx % grid_w) * image_size
+        y = (idx // grid_w) * image_size
+        name = '%4.3f' % betas[idx]
+        color = 'rgb(255, 255, 255)'  # white color
+        draw.text((x, y), name, fill=color, font=font)
     # save the edited image
     img.save(path)
-
 
 def save_image_grid(tensor_image_list, path, display_size, image_size=128):
     images = []
     # row-wise
+    """
     for i in range(display_size):
         for j in range(len(tensor_image_list)):
             image = tensor_image_list[j][i].unsqueeze(0)
@@ -46,12 +50,12 @@ def save_image_grid(tensor_image_list, path, display_size, image_size=128):
     num_images = 0
     for i in range(len(tensor_image_list)):
         for j in range(display_size):
-            image = tensor_image_list[i][j].unsqueeze(0)
+            image = tensor_image_list[i][j]
             images.append(util.to_data(F.interpolate(image, scale_factor=image_size/image.size(-1), recompute_scale_factor=True ) ))
             num_images += 1
     assert len(images) == num_images
     grid_size = [display_size, num_images//display_size]
-    """
+
     images = np.concatenate(images, 0)
     util.save_image_grid(images, path, grid_size=grid_size)
 

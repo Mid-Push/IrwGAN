@@ -79,7 +79,7 @@ class Logger(object):
 def write_loss(iterations, trainer, train_writer, prefix):
     members = [attr for attr in dir(trainer) \
                if not callable(getattr(trainer, attr)) and not attr.startswith("__") and (
-                       'loss' in attr or 'grad' in attr or 'nwd' in attr) and 'name' not in attr]
+                       'loss' in attr or 'grad' in attr or 'nwd' in attr ) and 'name' not in attr and 'pool' not in attr]
     for m in members:
         train_writer.add_scalar(prefix+'/'+m, getattr(trainer, m), iterations + 1)
 
@@ -118,6 +118,8 @@ def tensor2im(input_image, imtype=np.uint8):
         image_numpy = input_image
     return image_numpy.astype(imtype)
 
+def str2bool(x):
+    return x.lower() in ('true')
 
 def diagnose_network(net, name='network'):
     """Calculate and print the mean of average absolute(gradients)

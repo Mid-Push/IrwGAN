@@ -3,7 +3,7 @@ import torch
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from . import networks
-
+import util.util as util
 
 class BaseModel(ABC):
     """This class is an abstract base class (ABC) for models.
@@ -33,7 +33,7 @@ class BaseModel(ABC):
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
-        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)  # save all the checkpoints to save_dir
+        self.save_dir = self.model_dir # save all the checkpoints to save_dir
         if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
             torch.backends.cudnn.benchmark = True
         self.loss_names = []
@@ -75,8 +75,21 @@ class BaseModel(ABC):
     def optimize_parameters(self):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         pass
-
+    @property
+    def model_dir(self):
+        return ''
+    @abstractmethod
+    def print_information(self, opt):
+        pass
     def setup(self, opt):
+        opt.model_dir = self.model_dir
+        util.mkdirs(self.model_dir)
+        log_name = os.path.join(opt.model_dir, 'training_log.txt')
+        self.logger = util.Logger(log_name)
+        self.print_information(opt)
+        self.setup_networks(opt)
+
+    def setup_networks(self, opt):
         """Load and print networks; create schedulers
 
         Parameters:

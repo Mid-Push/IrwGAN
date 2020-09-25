@@ -136,3 +136,25 @@ def get_test_loaders(train_opt):
     dataloader_A = create_dataset(opt_A, inf=False)  # create a dataset given opt.dataset_mode and other options
     dataloader_B = create_dataset(opt_B, inf=False)  # create a dataset given opt.dataset_mode and other options
     return dataloader_A, dataloader_B
+
+
+def get_fix_train_loaders(train_opt):
+    opt = copy.deepcopy(train_opt)
+    opt.num_threads = 0   # test code only supports num_threads = 1
+    opt.batch_size = 1    # test code only supports batch_size = 1
+    opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    opt.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    opt.drop_last = False
+    opt.phase = 'test'
+    opt.dataset_mode = 'single'
+    opt.load_size = opt.crop_size
+    opt_A = copy.deepcopy(opt)
+    opt_A.dataroot = os.path.join(opt_A.dataroot, 'trainA')
+    opt_B = copy.deepcopy(opt)
+    opt_B.dataroot = os.path.join(opt_B.dataroot, 'trainB')
+    dataloader_A = create_dataset(opt_A, inf=False)  # create a dataset given opt.dataset_mode and other options
+    dataloader_B = create_dataset(opt_B, inf=False)  # create a dataset given opt.dataset_mode and other options
+    return dataloader_A, dataloader_B
+
+

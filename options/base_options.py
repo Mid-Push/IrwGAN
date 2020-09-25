@@ -32,9 +32,7 @@ class BaseOptions():
         parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels: 3 for RGB and 1 for grayscale')
         parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in the last conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in the first conv layer')
-        parser.add_argument('--netG', type=str, default='resnet_9blocks', help='specify generator architecture [resnet_9blocks | resnet_6blocks | unet_256 | unet_128]')
         parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
-        parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization [instance | batch | none]')
         parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
         parser.add_argument('--no_dropout', action='store_true', help='no dropout for the generator')
         # dataset parameters
@@ -49,14 +47,17 @@ class BaseOptions():
         parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data augmentation')
         parser.add_argument('--display_winsize', type=int, default=256, help='display window size for both visdom and HTML')
         # additional parameters
-        parser.add_argument('--epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument('--verbose', action='store_true', help='if specified, print more debugging information')
         parser.add_argument('--suffix', default='', type=str, help='customized suffix: opt.name = opt.name + suffix: e.g., {model}_{netG}_size{load_size}')
         parser.add_argument('--seed', type=int, default=None, help='random seed')
         # important parameters
-        parser.add_argument('--init_type', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
-        parser.add_argument('--batch_size', type=int, default=20, help='input batch size')
-        parser.add_argument('--netD', type=str, default='gl', help='specify discriminator architecture [basic | n_layers | pixel | local | global|gl|ms]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
+        parser.add_argument('--normG', type=str, default='in', help='instance normalization or batch normalization [instance | batch | none]')
+        parser.add_argument('--normD', type=str, default='none', help='instance normalization or batch normalization [instance | batch | none]')
+        parser.add_argument('--initG', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
+        parser.add_argument('--initD', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
+        parser.add_argument('--batch_size', type=int, default =20, help='input batch size')
+        parser.add_argument('--netG', type=str, default='resnet_9blocks', help='specify generator architecture [resnet_9blocks | resnet_6blocks | unet_256 | unet_128]')
+        parser.add_argument('--netD', type=str, default='global', help='specify discriminator architecture [basic | n_layers | pixel | local | global|gl|ms]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
         self.initialized = True
         return parser
 
@@ -90,27 +91,19 @@ class BaseOptions():
 
     def print_options(self, opt):
         """Print and save options
-
         It will print both current options and default values(if different).
         It will save options into a text file / [checkpoints_dir] / opt.txt
         """
-        name = '' if opt.name is None else opt.name
-        title = ''
+        message = ''
+        message += '----------------- Options ---------------\n'
         for k, v in sorted(vars(opt).items()):
+            comment = ''
             default = self.parser.get_default(k)
             if v != default:
-                if 'dataroot' in str(k):
-                    title = '%s' % opt.dataroot.strip('/').split('/')[-1]
-            if str(k) in self.important_args:
-                name += '-%s' % (str(v))
-        name = title + name
-        opt.expr_task = title
-        opt.name = name
-        # save to the disk
-        expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
-        util.mkdirs(expr_dir)
-        opt.expr_dir = expr_dir
-
+                comment = '\t[default: %s]' % str(default)
+            message += '{:>25}: {:<30}{}\n'.format(str(k), str(v), comment)
+        message += '----------------- End -------------------'
+        print(message)
 
     def parse(self):
         """Parse our options, create checkpoints directory suffix, and set up gpu device."""
@@ -123,7 +116,7 @@ class BaseOptions():
             suffix = ('_' + opt.suffix.format(**vars(opt))) if opt.suffix != '' else ''
             opt.name = opt.name + suffix
 
-        self.print_options(opt)
+        #self.print_options(opt)
 
         # set gpu ids
         str_ids = opt.gpu_ids.split(',')
