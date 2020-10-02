@@ -41,7 +41,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--drop_last', type=int, default=1, help='whether drop last batch to ensure the consistency between batchsize and samples')
 
         parser.add_argument('--beta_mode', type=str, default='AB', help='the type of beta_mode [A|B|AB|C]')
-        parser.add_argument('--sn', type=str2bool, default='True', help='whether applying spectral norm on discriminator')
+        parser.add_argument('--sn', type=str2bool, default='False', help='whether applying spectral norm on discriminator')
         parser.add_argument('--threshold', type=float, default=0.1, help='momentum term of adam')
 
         self.isTrain = True

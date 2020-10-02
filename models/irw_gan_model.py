@@ -56,7 +56,12 @@ class IRWGANModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'irw_A', 'irw_B']
+        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        if opt.beta_mode in ['A', 'AB']:
+            self.loss_names += ['irw_A']
+        if opt.beta_mode in ['B', 'AB']:
+            self.loss_names += ['irw_B']
+
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'cycle_A', 'idt_A']
         visual_names_B = ['real_B', 'fake_A', 'cycle_B', 'idt_B']
@@ -138,14 +143,17 @@ class IRWGANModel(BaseModel):
     @property
     def model_dir(self):
         opt = self.opt
-        sn = '_sn' if self.opt.sn else ''
-        thr = 'thr{}'.format(opt.threshold)
         self.opt.task = self.opt.dataroot.strip('/').split('/')[-1]
-        model_dir_name = "{}_{}_{}_{}_{}_{}_{}_{}_{}{}".format(self.opt.task, self.opt.gan_type,
-                                    self.opt.batch_size, self.opt.beta_mode,
-                                    self.opt.lambda_irw_A, self.opt.lambda_irw_B, thr,
-                                    self.opt.netD, opt.normD, sn)
-        return os.path.join(opt.checkpoints_dir, model_dir_name)
+        sn = '_sn' if self.opt.sn else ''
+        name = "{}_{}_{}_{}_{}_{}".format(opt.task, opt.gan_type, opt.batch_size, opt.beta_mode, opt.netD, opt.normD)
+        if opt.beta_mode in ['A','AB']:
+            name += "_{}".format(opt.lambda_irw_A)
+        elif opt.beta_mode in ['B', 'AB']:
+            name += "_{}".format(opt.lambda_irw_B)
+        if opt.beta_mode in ['A', 'B', 'AB']:
+            name += '_thr{}'.format(opt.threshold)
+        name += sn
+        return os.path.join(opt.checkpoints_dir, name)
 
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -308,12 +316,8 @@ class IRWGANModel(BaseModel):
         self.beta_net_a.eval()
         self.beta_net_b.eval()
         with torch.no_grad():
-            beta_as = torch.ones([len(x_as), 1, 1, 1]).to(self.device)
-            beta_bs = torch.ones([len(x_bs), 1, 1, 1]).to(self.device)
-            if self.opt.beta_mode in ['A', 'AB']:
-                beta_as = self.beta_net_a(x_as).detach()
-            if self.opt.beta_mode in ['B', 'AB']:
-                beta_bs = self.beta_net_b(x_bs).detach()
+            beta_as = self.beta_net_a(x_as).detach()
+            beta_bs = self.beta_net_b(x_bs).detach()
         self.beta_net_a.train()
         self.beta_net_b.train()
         images = torch.cat([x_as, x_bs], 0)

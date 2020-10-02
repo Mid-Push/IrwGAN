@@ -55,9 +55,9 @@ class BaseOptions():
         parser.add_argument('--normD', type=str, default='none', help='instance normalization or batch normalization [instance | batch | none]')
         parser.add_argument('--initG', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
         parser.add_argument('--initD', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
-        parser.add_argument('--batch_size', type=int, default =20, help='input batch size')
+        parser.add_argument('--batch_size', type=int, default=20, help='input batch size')
         parser.add_argument('--netG', type=str, default='resnet_9blocks', help='specify generator architecture [resnet_9blocks | resnet_6blocks | unet_256 | unet_128]')
-        parser.add_argument('--netD', type=str, default='global', help='specify discriminator architecture [basic | n_layers | pixel | local | global|gl|ms]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
+        parser.add_argument('--netD', type=str, default='ms', help='specify discriminator architecture [basic | n_layers | pixel | local | global|gl|ms]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
         self.initialized = True
         return parser
 

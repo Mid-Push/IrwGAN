@@ -223,6 +223,10 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='in', sn=True, init_type='n
         net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm=norm, sn=sn)
     elif netD == 'pixel':
         net = PixelDiscriminator(input_nc, ndf, n_layers=5, norm=norm, sn=sn)
+    elif netD == 'gl':
+        net = GLDiscriminator(input_nc, ndf, norm='none', sn=True)
+    elif netD == 'ms':
+        net = MsImageDis(input_nc, ndf, norm='none', sn=False)
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -502,6 +506,73 @@ class NLayerDiscriminator(nn.Module):
         x = self.model(input)
         return [x]
 
+class GLDiscriminator(nn.Module):
+    """Defines a PatchGAN discriminator"""
+    def __init__(self, input_nc, dim=64, norm='none', act='lrelu', pad_type='reflect', sn=True, max_dim=512):
+        """Construct a PatchGAN discriminator
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            n_layers (int)  -- the number of conv layers in the discriminator
+            norm_layer      -- normalization layer
+        """
+        super(GLDiscriminator, self).__init__()
+        self.global_dis = self._make_net(input_nc, dim, 3, norm, act, pad_type, sn, max_dim)
+        self.local_dis = self._make_net(input_nc, dim, 5, norm, act, pad_type, sn, max_dim)
+
+    def _make_net(self, input_nc, dim, n_layers, norm, act, pad_type, sn, max_dim):
+        sequence = [Conv2dBlock(input_nc, dim, 4, 2, 1, 'none', act, pad_type, sn)]
+        for n in range(1, n_layers):  # gradually increase the number of filters
+            sequence += [Conv2dBlock(dim, min(dim * 2, max_dim), 4, 2, 1, norm, act, pad_type, sn)]
+            dim = min(dim * 2, max_dim)
+        sequence += [Conv2dBlock(dim, min(dim*2, max_dim), 4, 1, 1, norm, act, pad_type, sn)]
+        sequence += [Conv2dBlock(min(dim*2, max_dim), 1, 4, 1, 1, 'none', 'none', pad_type, sn)]  # output 1 channel prediction map
+        model = nn.Sequential(*sequence)
+        return model
+
+    def forward(self, input):
+        """Standard forward."""
+        gx = self.global_dis(input)
+        lx = self.local_dis(input)
+        return [gx, lx]
+
+class MsImageDis(nn.Module):
+    # Multi-scale discriminator architecture
+    def __init__(self, input_dim=3, dim=64, norm='none', activ='lrelu', n_layer=4,
+                 num_scales=3, pad_type='reflect', sn=False):
+        super(MsImageDis, self).__init__()
+        self.n_layer = n_layer
+        self.dim = dim
+        self.norm = norm
+        self.activ = activ
+        self.num_scales = num_scales
+        self.pad_type = pad_type
+        self.input_dim = input_dim
+        self.sn = sn
+        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.cnns = nn.ModuleList()
+        for _ in range(self.num_scales):
+            self.cnns.append(self._make_net())
+
+    def _make_net(self):
+        dim = self.dim
+        cnn_x = []
+        cnn_x += [Conv2dBlock(self.input_dim, dim, 4, 2, 1, norm='none', activation=self.activ, pad_type=self.pad_type, sn=self.sn)]
+        for i in range(self.n_layer - 1):
+            cnn_x += [Conv2dBlock(dim, dim * 2, 4, 2, 1, norm=self.norm, activation=self.activ, pad_type=self.pad_type, sn=self.sn)]
+            dim *= 2
+        cnn_x += [nn.Conv2d(dim, 1, 1, 1, 0)]
+        cnn_x = nn.Sequential(*cnn_x)
+        return cnn_x
+
+    def forward(self, x):
+        outputs = []
+        for model in self.cnns:
+            outputs.append(model(x))
+            x = self.downsample(x)
+        return outputs
+
+
 class PixelDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
     def __init__(self, input_nc, dim=64, n_layers=3, norm='in', act='lrelu', pad_type='reflect', sn=True, max_dim=512):
@@ -545,7 +616,7 @@ class BetaNet(nn.Module):
 
     def forward(self, input):
         if not self.is_use:
-            return torch.ones([len(input), 1, 1, 1]).to(input.device)
+            return torch.ones([len(input), 1]).to(input.device)
         input = self.downsample(input).detach()
         out = self.model(input)
         out = torch.sum(out, [2, 3])
