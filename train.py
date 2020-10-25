@@ -36,24 +36,25 @@ if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
     #-----------------------------------------------------------
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
-    opt.dataset_size = len(dataset)    # get the number of images in the dataset.
+    opt.trainA_size = dataset.dataset.A_size    # get the number of images in the dataset.
+    opt.trainB_size = dataset.dataset.B_size    # get the number of images in the dataset.
     test_loader_a, test_loader_b = get_test_loaders(opt) # get test loader by hard-coding options
+    opt.testA_size = len(test_loader_a.dataset)    # get the number of images in the dataset.
+    opt.testB_size = len(test_loader_b.dataset)    # get the number of images in the dataset.
     fix_a = torch.stack([test_loader_a.dataset[i]['A'] for i in range(opt.display_size)]).cuda() # fixed test data
     fix_b = torch.stack([test_loader_b.dataset[i]['A'] for i in range(opt.display_size)]).cuda()
-    random_idx = [200*i for i in range(opt.batch_size)]
-    fix_train_a = torch.stack([dataset.dataset[i]['A'] for i in random_idx]).cuda() # fixed with same run
-    fix_train_b = torch.stack([dataset.dataset[i]['B'] for i in random_idx]).cuda() # fixed with same run
+    fix_train_a = torch.stack([dataset.dataset[i]['A'] for i in range(opt.batch_size)]).cuda() # fixed with different runs
+    fix_train_b = torch.stack([dataset.dataset[i]['B'] for i in range(opt.batch_size)]).cuda() # fixed with same run
     #-----------------------------------------------------------
     model = create_model(opt)      # create a model given opt.model and other options
-    model.setup(opt)               # regular setup: load and print networks; create schedulers
+    model.setup(opt)               # regular setup: load and print networks; create schedulers; update opt.epoch_count
     #-----------------------------------------------------------
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
-    train_writer = tensorboard.SummaryWriter(opt.model_dir) # setup train writer
+    train_writer = tensorboard.SummaryWriter(os.path.join(model.run_dir, 'log')) # setup train writer
     #-----------------------------------------------------------
-    cur_iters = 0                # the total number of training iterations
-    if opt.resume_epoch is not None:
-        cur_iters = opt.resume_epoch * opt.iterations_per_epoch
-    start_time = time.time()
+    cur_iters = opt.epoch_count * opt.iterations_per_epoch
+    used_time = opt.used_time
+    start_time = time.time() - used_time
     total_iters = (opt.n_epochs + opt.n_epochs_decay) * opt.iterations_per_epoch
     print('Start training...\n')
     for epoch in range(opt.epoch_count+1, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
@@ -67,9 +68,9 @@ if __name__ == '__main__':
             input_images, fake_images, betas = model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if cur_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
-                t_comp = (time.time() - start_time)
+                used_time = (time.time() - start_time)
                 util.write_loss(cur_iters, model, train_writer, prefix='training')
-                visualizer.print_current_losses(cur_iters, total_iters, t_comp, model.get_current_losses())
+                visualizer.print_current_losses(cur_iters, total_iters, used_time, model.get_current_losses())
 
             if cur_iters % opt.display_freq == 0:  # display images on visdom and save images to a HTML file
                 # debug the betas
@@ -79,25 +80,28 @@ if __name__ == '__main__':
                 visualizer.display_current_results(model.get_current_visuals(), epoch, save_result=True)
                 # evaluation
                 test_images = model.test(fix_a, fix_b)
-                test_path = os.path.join(opt.model_dir, 'fix-test_image-%03d.jpg' % epoch)
+                test_path = os.path.join(model.run_dir, 'img', 'fix-test_image-%03d.jpg' % epoch)
                 misc.save_image_grid(test_images, test_path, opt.display_size)
-                train_path = os.path.join(opt.model_dir, 'fix-train_image-%03d.jpg' % epoch)
+                train_path = os.path.join(model.run_dir, 'img', 'fix-train_image-%03d.jpg' % epoch)
                 fix_images, fix_betas = model.get_betas(fix_train_a, fix_train_b)
                 misc.save_train_image_grid(fix_images, fix_betas, train_path)
-                train_path = os.path.join(opt.model_dir, 'train_image-%03d.jpg' % epoch)
+                train_path = os.path.join(model.run_dir, 'img', 'train_image-%03d.jpg' % epoch)
                 misc.save_train_image_grid(input_images, betas, train_path)
-                train_path = os.path.join(opt.model_dir, 'train_image_fake-%03d.jpg' % epoch)
+                train_path = os.path.join(model.run_dir, 'img', 'train_image_fake-%03d.jpg' % epoch)
                 misc.save_train_image_grid(fake_images, betas, train_path)
 
         model.update_learning_rate()    # update learning rates in the beginning of every epoch.
         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
-            model.save_networks('latest')
-            model.save_networks(epoch)
+            model.save_networks('latest', used_time)
+            model.save_networks(epoch, used_time)
             print('Start evaluating the image translation performance...')
-            cur_test_dir = os.path.join(opt.model_dir, 'test_images/epoch_%03d' % epoch)
-            fid_a2b, fid_b2a = misc.test_fid(test_loader_a, model.gen_a2b, test_loader_b, model.gen_b2a, cur_test_dir)
+            fid_a2b, fid_b2a = misc.test_fid(test_loader_a, model.gen_a2b, test_loader_b, model.gen_b2a, model.run_dir, opt)
             train_writer.add_scalar('evaluation/fid_a2b', fid_a2b, cur_iters)
             train_writer.add_scalar('evaluation/fid_b2a', fid_b2a, cur_iters)
-            print('FID_a2b: %4.2f, FID_b2a: %4.2f' % (fid_a2b, fid_b2a))
+            info = '(epoch: %03d, time %-12s) fid_a2b: %.2f, fid_b2a: %.2f' % (epoch, format_time(used_time),fid_a2b, fid_b2a)
+            print(info)
+            f = open(os.path.join(model.run_dir, 'metric-fid.txt'), 'a')
+            f.writelines(info+'\n')
+            f.close()
 
     print('Training finished...')

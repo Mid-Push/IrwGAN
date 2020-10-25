@@ -7,5 +7,5 @@
 #SBATCH --error=./logs/error.log
 conda activate project
 cd /pylon5/ac5616p/yanwuxu/gan/IRW_GAN
-python train.py --dataroot=../datasets/$1 --beta_mode=B --lambda_nos_B=1.0
+python train.py --dataroot=../datasets/$1 --beta_mode=$2 --resume
 

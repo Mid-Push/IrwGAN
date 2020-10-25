@@ -33,7 +33,6 @@ class BaseModel(ABC):
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
-        self.save_dir = self.model_dir # save all the checkpoints to save_dir
         if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
             torch.backends.cudnn.benchmark = True
         self.loss_names = []
@@ -76,16 +75,27 @@ class BaseModel(ABC):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         pass
     @property
-    def model_dir(self):
+    def model_name(self):
         return ''
     @abstractmethod
     def print_information(self, opt):
         pass
     def setup(self, opt):
-        opt.model_dir = self.model_dir
-        util.mkdirs(self.model_dir)
-        log_name = os.path.join(opt.model_dir, 'training_log.txt')
-        self.logger = util.Logger(log_name)
+        opt.run_dir = os.path.join(opt.result_dir, self.model_name)
+        self.run_dir = opt.run_dir
+        util.mkdirs(self.run_dir)
+        util.mkdirs(os.path.join(self.run_dir, 'fakeB'))
+        util.mkdirs(os.path.join(self.run_dir, 'fakeA'))
+        util.mkdirs(os.path.join(self.run_dir, 'img'))
+        util.mkdirs(os.path.join(self.run_dir, 'model'))
+        util.mkdirs(os.path.join(self.run_dir, 'log'))
+        log_name = os.path.join(self.run_dir, 'log', 'training_log.txt')
+        self.logger = util.Logger(log_name, append=opt.resume)
+        eval_log = os.path.join(self.run_dir, 'metric-fid.txt')
+        if not opt.resume:
+            f = open(eval_log, 'w')
+            f.close()
+
         self.print_information(opt)
         self.setup_networks(opt)
 
@@ -96,13 +106,15 @@ class BaseModel(ABC):
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         if not self.isTrain:
-            if opt.resume_epoch is None:
+            if opt.resume is None:
                 self.load_networks('latest')
-            else:
-                self.load_networks(opt.resume_epoch)
         else:
-            if opt.resume_epoch is not None:
-                self.load_networks(opt.resume_epoch)
+            if opt.resume:
+                # automatically load the model if resume flag is True
+                latest_model_name = util.get_model_list(os.path.join(self.run_dir, 'model'), key='network', exclude='latest')
+                self.load_networks(latest_model_name)
+                opt.epoch_count = int(os.path.basename(latest_model_name).split('.')[0].split('-')[-1])  # setup the epoch_count to start with
+
         # put opt later as we load_networks will load optimizer as well
         if self.isTrain:
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
@@ -162,7 +174,7 @@ class BaseModel(ABC):
                 errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
 
-    def save_networks(self, epoch):
+    def save_networks(self, epoch, used_time):
         """Save all the networks to the disk.
 
         Parameters:
@@ -174,7 +186,7 @@ class BaseModel(ABC):
             save_filename = 'network-snapshot-%s.pth' % (epoch)
         else:
             save_filename = 'network-snapshot-%03d.pth' % (epoch)
-        save_path = os.path.join(self.save_dir, save_filename)
+        save_path = os.path.join(self.run_dir, 'model', save_filename)
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, name)
@@ -190,7 +202,7 @@ class BaseModel(ABC):
             if isinstance(name, str):
                 opt = getattr(self, name)
                 model_dict[name] = opt.state_dict()
-
+        model_dict['used_time'] = used_time
         torch.save(model_dict, save_path)
 
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
@@ -207,14 +219,13 @@ class BaseModel(ABC):
         else:
             self.__patch_instance_norm_state_dict(state_dict, getattr(module, key), keys, i + 1)
 
-    def load_networks(self, epoch):
+    def load_networks(self, latest_model_name):
         """Load all the networks from the disk.
 
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
-        load_filename = 'network-snapshot-%03d.pth' % (epoch)
-        load_path = os.path.join(self.save_dir, load_filename)
+        load_path = latest_model_name
         model = torch.load(load_path, map_location=str(self.device))
         print('Resuming from %s' % load_path)
         print('Loading models...')
@@ -230,6 +241,7 @@ class BaseModel(ABC):
             if isinstance(name, str):
                 opt = getattr(self, name)
                 opt.load_state_dict(model[name])
+        self.opt.used_time = model['used_time']
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
@@ -237,7 +249,7 @@ class BaseModel(ABC):
         Parameters:
             verbose (bool) -- if verbose: print the network architecture
         """
-        if self.opt.resume_epoch is not None:
+        if self.opt.resume:
             print('-------------- Networks loaded ----------------')
         else:
             print('---------- Networks initialized -------------')

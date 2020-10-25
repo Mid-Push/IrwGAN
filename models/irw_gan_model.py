@@ -43,8 +43,8 @@ class IRWGANModel(BaseModel):
             parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
             parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
             parser.add_argument('--lambda_identity', type=float, default=1.0, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
-            parser.add_argument('--lambda_irw_A', type=float, default=1.0, help='weight for controlling the sparsity of beta')
-            parser.add_argument('--lambda_irw_B', type=float, default=1.0, help='weight for controlling the sparsity of beta')
+            parser.add_argument('--lambda_nos_A', type=float, default=1.0, help='weight for controlling the sparsity of beta')
+            parser.add_argument('--lambda_nos_B', type=float, default=1.0, help='weight for controlling the sparsity of beta')
 
         return parser
 
@@ -58,9 +58,9 @@ class IRWGANModel(BaseModel):
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
         if opt.beta_mode in ['A', 'AB']:
-            self.loss_names += ['irw_A']
+            self.loss_names += ['nos_A']
         if opt.beta_mode in ['B', 'AB']:
-            self.loss_names += ['irw_B']
+            self.loss_names += ['nos_B']
 
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'cycle_A', 'idt_A']
@@ -113,47 +113,40 @@ class IRWGANModel(BaseModel):
     def print_information(self, opt):
         print('#### Information ####')
         print('# task: %s' % opt.task)
-        print('# model_dir: %s' % opt.model_dir)
-        print('# dataset_size: %d' % opt.dataset_size)
         print('# gan_type: %s' % opt.gan_type)
+        print('# netD: %s' % opt.netD)
+        print('# trainA_size: %d' % opt.trainA_size)
+        print('# trainB_size: %d' % opt.trainB_size)
+        print('# testA_size: %d' % opt.testA_size)
+        print('# testB_size: %d' % opt.testB_size)
         print()
         print('#### Weight ####')
         print('# lambda_A: %.f' % opt.lambda_A)
         print('# lambda_B: %.f' % opt.lambda_B)
         print('# lambda_identity: %.f' % opt.lambda_identity)
         print()
-        print('#### Generator #####')
-        print('# netG: %s' % opt.netG)
-        print('# initG: %s' % opt.initG)
-        print('# normG: %s' % opt.normG)
-        print()
-        print('#### Discriminator ####')
-        print('# netD: %s' % opt.netD)
-        print('# initD: %s' % opt.initD)
-        print('# normD: %s' % opt.normD)
-        print('# sn: %s' % opt.sn)
-        print()
         print('#### Model Specific ####')
         print('# beta_mode: %s' % opt.beta_mode)
         print('# threshold: %s' % opt.threshold)
         print('# batch_size: %d' % opt.batch_size)
-        print('# lambda_irw_A: %.f' % opt.lambda_irw_A)
-        print('# lambda_irw_B: %.f' % opt.lambda_irw_B)
+        print('# lambda_nos_A: %.f' % opt.lambda_nos_A)
+        print('# lambda_nos_B: %.f' % opt.lambda_nos_B)
+        print()
 
     @property
-    def model_dir(self):
+    def model_name(self):
         opt = self.opt
-        self.opt.task = self.opt.dataroot.strip('/').split('/')[-1]
+        opt.task = self.opt.dataroot.strip('/').split('/')[-1]
         sn = '_sn' if self.opt.sn else ''
-        name = "{}_{}_{}_{}_{}_{}".format(opt.task, opt.gan_type, opt.batch_size, opt.beta_mode, opt.netD, opt.normD)
-        if opt.beta_mode in ['A','AB']:
-            name += "_{}".format(opt.lambda_irw_A)
-        elif opt.beta_mode in ['B', 'AB']:
-            name += "_{}".format(opt.lambda_irw_B)
+        name = "{}_{}_{}_{}_{}".format(opt.task, opt.gan_type, opt.batch_size, opt.beta_mode, opt.netD)
+        if opt.beta_mode in ['A', 'AB']:
+            name += "_{}".format(opt.lambda_nos_A)
+        if opt.beta_mode in ['B', 'AB']:
+            name += "_{}".format(opt.lambda_nos_B)
         if opt.beta_mode in ['A', 'B', 'AB']:
             name += '_thr{}'.format(opt.threshold)
         name += sn
-        return os.path.join(opt.checkpoints_dir, name)
+        return name
 
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -233,7 +226,6 @@ class IRWGANModel(BaseModel):
         self.loss_cycle_B = self.criterionCycle(self.cycle_B, self.real_B, beta_b.detach()) * lambda_B
         # combined loss and calculate gradients
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B
-        #return self.loss_G
         return self.loss_G
 
     def optimize_parameters(self):
@@ -284,8 +276,8 @@ class IRWGANModel(BaseModel):
 
         #------------------------------------------------------------------
         # train beta_net_A, beta_net_B
-        self.loss_irw_A = 0
-        self.loss_irw_B = 0
+        self.loss_nos_A = 0
+        self.loss_nos_B = 0
         if self.opt.beta_mode in ['A', 'B', 'AB']:
             self.set_requires_grad([self.beta_net_a, self.beta_net_b], True)
             self.optimizer_B.zero_grad()
@@ -298,10 +290,10 @@ class IRWGANModel(BaseModel):
                 beta_b = beta_bs[i]
                 self.loss_beta_A += (beta_a * self.loss_unweight_A_pool[i]/batch_size)
                 self.loss_beta_B += (beta_b * self.loss_unweight_B_pool[i]/batch_size)
-            self.loss_irw_A = torch.norm(beta_as) / batch_size
-            self.loss_irw_B = torch.norm(beta_bs) / batch_size
-            irw_loss = self.opt.lambda_irw_A * self.loss_irw_A + self.opt.lambda_irw_B * self.loss_irw_B
-            self.loss_beta = self.loss_beta_A + self.loss_beta_B + irw_loss
+            self.loss_nos_A = torch.norm(beta_as) / batch_size
+            self.loss_nos_B = torch.norm(beta_bs) / batch_size
+            nos_loss = self.opt.lambda_nos_A * self.loss_nos_A + self.opt.lambda_nos_B * self.loss_nos_B
+            self.loss_beta = self.loss_beta_A + self.loss_beta_B + nos_loss
             self.loss_beta.backward()
             self.optimizer_B.step()
 

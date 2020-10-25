@@ -20,15 +20,14 @@ def set_seed(seed=None):
 class Logger(object):
     """Redirect stderr to stdout, optionally print stdout to a file, and optionally force flushing on both stdout and the file."""
 
-    def __init__(self, file_name: str = None, file_mode: str = "a", should_flush: bool = True):
+    def __init__(self, file_name: str = None, file_mode: str = "a", should_flush: bool = True, append=False):
         self.file = None
 
-        if file_name is not None:
-            if os.path.exists(file_name):
-                file_mode = 'a'
-            else:
-                file_mode = 'w'
-            self.file = open(file_name, file_mode)
+        if append:
+            file_mode = 'a'
+        else:
+            file_mode = 'w'
+        self.file = open(file_name, file_mode)
 
         self.should_flush = should_flush
         self.stdout = sys.stdout
@@ -172,6 +171,18 @@ def print_numpy(x, val=True, shp=False):
         x = x.flatten()
         print('mean = %3.3f, min = %3.3f, max = %3.3f, median = %3.3f, std=%3.3f' % (
             np.mean(x), np.min(x), np.max(x), np.median(x), np.std(x)))
+
+
+def get_model_list(dirname, key, exclude='latest'):
+    if os.path.exists(dirname) is False:
+        return None
+    gen_models = [os.path.join(dirname, f) for f in os.listdir(dirname) if
+                  os.path.isfile(os.path.join(dirname, f)) and key in f and ".pt" in f and exclude not in f]
+    if gen_models is None:
+        return None
+    gen_models.sort()
+    last_model_name = gen_models[-1]
+    return last_model_name
 
 
 def mkdirs(paths):

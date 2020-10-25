@@ -73,7 +73,7 @@ class Visualizer():
                 self.create_visdom_connections()
 
         if self.use_html:  # create an HTML object at <checkpoints_dir>/web/; images will be saved under <checkpoints_dir>/web/images/
-            self.web_dir = os.path.join(opt.model_dir, 'web')
+            self.web_dir = os.path.join(opt.run_dir, 'web')
             self.img_dir = os.path.join(self.web_dir, 'images')
             #print('create web directory %s...' % self.web_dir)
             util.mkdirs([self.web_dir, self.img_dir])

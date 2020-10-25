@@ -24,7 +24,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--save_latest_freq', type=int, default=5000, help='frequency of saving the latest results')
         parser.add_argument('--save_epoch_freq', type=int, default=5, help='frequency of saving checkpoints at the end of epochs')
         parser.add_argument('--save_by_iter', action='store_true', help='whether saves model by iteration')
-        parser.add_argument('--resume_epoch', type=int, default=None,     help='continue training: load the latest model')
+        parser.add_argument('--resume', action='store_true', default=False,  help='continue training: load the latest model')
         parser.add_argument('--epoch_count', type=int, default=0, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
         parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         # training parameters
@@ -42,7 +42,8 @@ class TrainOptions(BaseOptions):
 
         parser.add_argument('--beta_mode', type=str, default='AB', help='the type of beta_mode [A|B|AB|C]')
         parser.add_argument('--sn', type=str2bool, default='False', help='whether applying spectral norm on discriminator')
-        parser.add_argument('--threshold', type=float, default=0.1, help='momentum term of adam')
+        parser.add_argument('--threshold', type=float, default=0.1, help='threshold on beta')
+        parser.add_argument('--used_time', type=float, default=0, help='used time for training')
 
         self.isTrain = True
         return parser
