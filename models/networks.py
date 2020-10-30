@@ -602,7 +602,7 @@ class PixelDiscriminator(nn.Module):
 
 class BetaNet(nn.Module):
     """Defines a PatchGAN discriminator"""
-    def __init__(self, input_nc, dim=64, n_layers=3, norm='in', is_use=True,
+    def __init__(self, input_nc, dim=64, n_layers=4, norm='in', is_use=True,
                  act='relu', pad_type='reflect', sn=False, max_dim=512):
         super(BetaNet, self).__init__()
         sequence = [Conv2dBlock(input_nc, dim, 4, 2, 1, 'none', act, pad_type, sn)]
