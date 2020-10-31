@@ -68,11 +68,11 @@ class IRWGANModel(BaseModel):
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
-        if self.isTrain:
+        if opt.phase == 'train' or opt.phase == 'resume':
             self.model_names = ['gen_a2b', 'gen_b2a', 'dis_a', 'dis_b', 'beta_net_a', 'beta_net_b']
             self.opt_names = ['optimizer_G', 'optimizer_D', 'optimizer_B']
-        else:  # during test time, only load Gs
-            self.model_names = ['gen_a2b', 'gen_b2a']
+        else:  # during test time, only load Gs and beta_nets
+            self.model_names = ['gen_a2b', 'gen_b2a', 'beta_net_a', 'beta_net_b']
             self.opt_names = []
 
         # define networks (both Generators and discriminators)
@@ -82,16 +82,18 @@ class IRWGANModel(BaseModel):
                                         not opt.no_dropout, opt.initG, opt.init_gain, self.gpu_ids)
         self.gen_b2a = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.normG,
                                         not opt.no_dropout, opt.initG, opt.init_gain, self.gpu_ids)
+        self.beta_net_a = networks.define_BetaNet(opt.input_nc, opt.ndf, 4, opt.normG, opt.initG, opt.init_gain,
+                                                  self.gpu_ids, is_use=('A' in opt.beta_mode))
+        self.beta_net_b = networks.define_BetaNet(opt.input_nc, opt.ndf, 4, opt.normG, opt.initG, opt.init_gain,
+                                                  self.gpu_ids, is_use=('B' in opt.beta_mode))
 
-        if self.isTrain:  # define discriminators
+        if opt.phase == 'train' or opt.phase == 'resume':  # define discriminators
             self.dis_a = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.normD, opt.sn, opt.initD, opt.init_gain, self.gpu_ids)
             self.dis_b = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.normD, opt.sn, opt.initD, opt.init_gain, self.gpu_ids)
-            self.beta_net_a = networks.define_BetaNet(opt.input_nc, opt.ndf, 4, opt.normG, opt.initG, opt.init_gain, self.gpu_ids, is_use=('A' in opt.beta_mode))
-            self.beta_net_b = networks.define_BetaNet(opt.input_nc, opt.ndf, 4, opt.normG, opt.initG, opt.init_gain, self.gpu_ids, is_use=('B' in opt.beta_mode))
 
-        if self.isTrain:
+        if opt.phase == 'train' or opt.phase == 'resume':
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert(opt.input_nc == opt.output_nc)
             # define loss functions, ignore samples that have beta<threshold
@@ -113,6 +115,7 @@ class IRWGANModel(BaseModel):
     def print_information(self, opt):
         print('#### Information ####')
         print('# task: %s' % opt.task)
+        print('# phase: %s' % opt.phase)
         print('# gan_type: %s' % opt.gan_type)
         print('# netD: %s' % opt.netD)
         print('# trainA_size: %d' % opt.trainA_size)

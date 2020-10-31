@@ -19,7 +19,7 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 import time
-from options.train_options import TrainOptions
+from options.options import Options
 from data import create_dataset, get_test_loaders
 from models import create_model
 from util.visualizer import Visualizer
@@ -34,9 +34,14 @@ import copy
 
 def test(model, opt, test_loader_a, test_loader_b):
     # test
+    print('[*] testing start!')
     fid_a2b, fid_b2a = misc.test_fid(test_loader_a, model.gen_a2b, test_loader_b, model.gen_b2a, model.run_dir, opt)
     info = 'fid_a2b: %.2f, fid_b2a: %.2f' % (fid_a2b, fid_b2a)
     print(info)
+    f = open(os.path.join(model.run_dir, 'metric-fid.txt'), 'a')
+    f.writelines(info + '\n')
+    f.close()
+    print('[*] testing finished!')
 
 def training_loop(model, opt, dataset, test_loader_a, test_loader_b):
 
@@ -54,7 +59,7 @@ def training_loop(model, opt, dataset, test_loader_a, test_loader_b):
     used_time = opt.used_time
     start_time = time.time() - used_time
     total_iters = (opt.n_epochs + opt.n_epochs_decay) * opt.iterations_per_epoch
-    print('Start training...\n')
+    print('[*] training start!\n')
     for epoch in range(opt.epoch_count+1, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
         visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
 
@@ -102,11 +107,11 @@ def training_loop(model, opt, dataset, test_loader_a, test_loader_b):
             f.writelines(info+'\n')
             f.close()
 
-    print('Training finished...')
+    print('[*] training finished!')
 
 
 if __name__ == '__main__':
-    opt = TrainOptions().parse()   # get training options
+    opt = Options().parse()   # get training options
     #-----------------------------------------------------------
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     opt.trainA_size = dataset.dataset.A_size    # get the number of images in the dataset.
@@ -118,7 +123,7 @@ if __name__ == '__main__':
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers; update opt.epoch_count
     #-----------------------------------------------------------
-    if opt.phase == 'train':
+    if opt.phase == 'train' or opt.phase == 'resume':
         training_loop(model, opt, dataset, test_loader_a, test_loader_b)
     elif opt.phase == 'test':
         test(model, opt, test_loader_a, test_loader_b)

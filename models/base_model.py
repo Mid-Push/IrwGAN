@@ -31,7 +31,6 @@ class BaseModel(ABC):
         """
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
-        self.isTrain = opt.isTrain
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
         if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
             torch.backends.cudnn.benchmark = True
@@ -89,12 +88,23 @@ class BaseModel(ABC):
         util.mkdirs(os.path.join(self.run_dir, 'img'))
         util.mkdirs(os.path.join(self.run_dir, 'model'))
         util.mkdirs(os.path.join(self.run_dir, 'log'))
-        log_name = os.path.join(self.run_dir, 'log', 'training_log.txt')
-        self.logger = util.Logger(log_name, append=opt.resume)
         eval_log = os.path.join(self.run_dir, 'metric-fid.txt')
-        if not opt.resume:
+        if opt.phase == 'train':
             f = open(eval_log, 'w')
+            f.writelines('\n###################################\n')
+            f.writelines('########### training ##############\n')
+            f.writelines('###################################\n')
             f.close()
+        if opt.phase == 'test':
+            f = open(eval_log, 'a')
+            f.writelines('\n###################################\n')
+            f.writelines('############## test ###############\n')
+            f.writelines('###################################\n')
+            f.close()
+
+        if opt.phase == 'train' or opt.phase == 'resume':
+            log_name = os.path.join(self.run_dir, 'log', 'training_log.txt')
+            self.logger = util.Logger(log_name, append=(opt.phase == 'resume'))
 
         self.print_information(opt)
         self.setup_networks(opt)
@@ -105,18 +115,23 @@ class BaseModel(ABC):
         Parameters:
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
-        if not self.isTrain:
-            if opt.resume is None:
-                self.load_networks('latest')
-        else:
-            if opt.resume:
+        if opt.phase == 'train':
+            # we already initialized the networks while constructing them
+            pass
+
+        if opt.phase == 'test':
+            # load the latest model for testing
+            load_path = os.path.join(self.run_dir, 'model', 'network-snapshot-latest.pth')
+            self.load_networks(load_path)
+
+        if opt.phase == 'resume':
                 # automatically load the model if resume flag is True
                 latest_model_name = util.get_model_list(os.path.join(self.run_dir, 'model'), key='network', exclude='latest')
                 self.load_networks(latest_model_name)
                 opt.epoch_count = int(os.path.basename(latest_model_name).split('.')[0].split('-')[-1])  # setup the epoch_count to start with
 
         # put opt later as we load_networks will load optimizer as well
-        if self.isTrain:
+        if opt.phase == 'train' or opt.phase == 'resume':
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
             # we do not have to save lr_scheduler as it will be reflected in opt.epoch_count
         self.print_networks(opt.verbose)
@@ -227,7 +242,7 @@ class BaseModel(ABC):
         """
         load_path = latest_model_name
         model = torch.load(load_path, map_location=str(self.device))
-        print('Resuming from %s' % load_path)
+        print('Loading from %s' % load_path)
         print('Loading models...')
         for name in self.model_names:
             if isinstance(name, str):
@@ -236,7 +251,8 @@ class BaseModel(ABC):
                     net = net.module
                 net.load_state_dict(model[name])
         # load optimizers
-        print('Loading optimizers...')
+        if len(self.opt_names) > 0:
+            print('Loading optimizers...')
         for name in self.opt_names:
             if isinstance(name, str):
                 opt = getattr(self, name)
@@ -249,10 +265,10 @@ class BaseModel(ABC):
         Parameters:
             verbose (bool) -- if verbose: print the network architecture
         """
-        if self.opt.resume:
-            print('-------------- Networks loaded ----------------')
-        else:
+        if self.opt.phase == 'train':
             print('---------- Networks initialized -------------')
+        else:
+            print('-------------- Networks loaded ----------------')
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, name)
