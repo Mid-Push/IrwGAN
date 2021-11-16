@@ -4,8 +4,24 @@
 
 
 ## Dataset
-[Selfie2anime-Danbooru]https://drive.google.com/file/d/1jWjBygCJo5xrorIRJ8g5TprY69nnQuHY/view?usp=sharing)
+**[Selfie2anime-Danbooru](https://drive.google.com/file/d/1jWjBygCJo5xrorIRJ8g5TprY69nnQuHY/view?usp=sharing)**
 
 ## Trained models and generated images
 **[&#x1F34F;IrwGAN](https://junyanz.github.io/CycleGAN/) |  [Baseline](https://arxiv.org/pdf/1703.10593.pdf) |  [CycleGAN](https://github.com/junyanz/CycleGAN) |
 [MUNIT](https://www.tensorflow.org/tutorials/generative/cyclegan) | [GcGAN](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/CycleGAN.ipynb) | [NICE-GAN](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/CycleGAN.ipynb)**
+
+
+### Usage
+
+- Training:
+```bash
+python main.py --dataroot=datasets/selfie2anime-danbooru
+```
+- Resume:
+```bash
+python main.py --dataroot=datasets/selfie2anime-danbooru --phase=resume
+```
+- Test:
+```bash
+python main.py --dataroot=datasets/selfie2anime-danbooru --phase=test
+```
