@@ -1,4 +1,4 @@
-# IrwGAN (ICCV2021)
+# IrwGAN (ICCV2021): [Paper](https://openaccess.thecvf.com/content/ICCV2021/papers/Xie_Unaligned_Image-to-Image_Translation_by_Learning_to_Reweight_ICCV_2021_paper.pdf)
 
 ## [Update] 11/16/2021 Code is pushed, selfie-anime-danbooru dataset released.
 
