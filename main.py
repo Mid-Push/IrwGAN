@@ -94,15 +94,6 @@ def training_loop(model, opt, dataset, test_loader_a, test_loader_b):
         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
             model.save_networks('latest', used_time)
             model.save_networks(epoch, used_time)
-            print('Start evaluating the image translation performance...')
-            fid_a2b, fid_b2a = misc.test_fid(test_loader_a, model.gen_a2b, test_loader_b, model.gen_b2a, model.run_dir, opt)
-            train_writer.add_scalar('evaluation/fid_a2b', fid_a2b, cur_iters)
-            train_writer.add_scalar('evaluation/fid_b2a', fid_b2a, cur_iters)
-            info = '(epoch: %03d, time %-12s) fid_a2b: %.2f, fid_b2a: %.2f' % (epoch, format_time(used_time),fid_a2b, fid_b2a)
-            print(info)
-            f = open(os.path.join(model.run_dir, 'metric-fid.txt'), 'a')
-            f.writelines(info+'\n')
-            f.close()
 
     print('[*] training finished!')
 
